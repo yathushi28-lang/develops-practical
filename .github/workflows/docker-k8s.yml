@@ -64,7 +64,9 @@ jobs:
         run: |
           kubectl port-forward service/flask-service 8080:80 &
           sleep 5
-          curl -s http://localhost:8080
+          RESPONSE=$(curl -sf http://localhost:8080)
+          echo "Response from Kubernetes: $RESPONSE"
+          echo "$RESPONSE" | grep -q "Hello, DevOps World"
 
       - name: Chaos Test - Delete a Pod
         run: |
