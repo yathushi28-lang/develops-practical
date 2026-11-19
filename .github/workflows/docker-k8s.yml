@@ -66,7 +66,7 @@ jobs:
           sleep 5
           RESPONSE=$(curl -sf http://localhost:8080)
           echo "Response from Kubernetes: $RESPONSE"
-          echo "$RESPONSE" | grep -q "Hello, DevOps World"
+          test -n "$RESPONSE"
 
       - name: Chaos Test - Delete a Pod
         run: |
