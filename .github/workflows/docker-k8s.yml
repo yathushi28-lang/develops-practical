@@ -1,0 +1,78 @@
+name: Docker and Kubernetes Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        run: docker build -t flask-app:v1 .
+
+      - name: Run and Test Container
+        run: |
+          docker run -d -p 5000:5000 --name flask-test flask-app:v1
+          sleep 5
+          curl -s http://localhost:5000
+          docker stop flask-test
+
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag and Push Image to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        run: |
+          docker tag flask-app:v1 $DOCKERHUB_USERNAME/flask-app:v1
+          docker push $DOCKERHUB_USERNAME/flask-app:v1
+
+  kubernetes:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Start Kubernetes Cluster
+        uses: helm/kind-action@v1
+
+      - name: Build Image and Load into Cluster
+        run: |
+          docker build -t flask-app:v1 .
+          kind load docker-image flask-app:v1 --name chart-testing
+
+      - name: Deploy to Kubernetes
+        run: |
+          sed "s|image: .*|image: flask-app:v1|" k8s/deployment.yaml | kubectl apply -f -
+          kubectl apply -f k8s/service.yaml
+          kubectl rollout status deployment/flask-deployment --timeout=120s
+          kubectl get pods -o wide
+          kubectl get service flask-service
+
+      - name: Access the Application
+        run: |
+          kubectl port-forward service/flask-service 8080:80 &
+          sleep 5
+          curl -s http://localhost:8080
+
+      - name: Chaos Test - Delete a Pod
+        run: |
+          POD=$(kubectl get pods -l app=flask-web -o jsonpath='{.items[0].metadata.name}')
+          echo "Deleting pod: $POD"
+          kubectl delete pod $POD
+          kubectl get pods
+          kubectl wait --for=condition=available deployment/flask-deployment --timeout=120s
+          sleep 5
+          echo "After self-healing:"
+          kubectl get pods
