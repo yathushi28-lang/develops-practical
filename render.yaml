@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: my-flask-devops-app
-    runtime: docker
-    plan: free
-    branch: main
-    autoDeploy: true
